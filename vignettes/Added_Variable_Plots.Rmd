@@ -1,0 +1,204 @@
+---
+title: "Added Variable Plots"
+author: "Derek Sonderegger"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Added Variable Plots}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+library(ggAVplots)
+```
+
+# Theory
+The Zagat guide contains restaurant ratings and reviews for many major world cities.
+We want to understand variation in the average Price of a dinner in Italian 
+restaurants in New York City. Specifically, we want to know how customer ratings 
+(measured on a scale of 0 to 30) of the Food, Decor, and Service, as well as whether 
+the restaurant is located to the east or west of 5th Avenue, affect the average Price 
+of a meal. The data contains ratings and prices for 168 Italian restaurants in 2001.
+
+*This material for this activity was adapted from*
+*Sheather, A Modern Approach to Regression with R by Amelia McNamara.*
+*I've added some updates.*
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+
+nyc <- read.csv("http://www.math.smith.edu/~bbaumer/mth247/sheather/nyc.csv")
+dim(nyc)
+head(nyc)
+```
+
+Lets check out the correlation plots first
+```{r, message=FALSE}
+nyc %>%
+  select(Price:East) %>%
+  GGally::ggpairs()
+```
+
+Unsurprisingly, food, decor, and service all all highly correlated.
+
+## Questions
+
+Which variables seems to be strongly correlated with Price?
+
+Are there other significant relationships between the variables that seem important? Generate a correlation matrix to quantify relationships between individual pairs of variables.
+
+```{r}
+nyc %>%
+  select(Price:East) %>%
+  cor() %>%
+  round( digits=3 )
+```
+
+Clearly food, decor, and service all are correlated with the price, but because
+they are correlated with each other, we have to be careful in interpeting the
+coefficients.
+
+One way to understand the effect of, say service, after accounting for food and
+decor is something called an "added variable plot" or "partial regression plot".
+
+If we first consider the full model with all the variables.
+
+```{r}
+m_full <- lm(Price ~ Food + Decor + Service + East, data=nyc)
+summary(m_full)
+```
+
+These coefficients don't necessarily make sense to me. In particular I don't understand
+why `Decor` has such a strong p-value but `Service` has almost a negligible 
+(but negative!) effect. 
+
+
+## Added Variable Plot procedure
+Consider the set of $k+1$ variables $X_1, X_2, \dots, X_k, Z$ where we are 
+interested in the effect of $Z$ on the response variable after accounting for
+the other $X_1,\dots, X_k$. The procedure is:
+
+1.  Build the model $Y \sim X_1+\dots+X_k$ and record these residuals as
+    $\epsilon_y$.
+2.  Build the model $Z \sim X_1 +\dots+X_k$ and record these residuals as
+    $\epsilon_z$.
+3.  Fit the model $\epsilon_y \sim \epsilon_z$ and plot that model.
+
+```{r}
+m_y <- lm(Price ~ Food + Decor + East, data=nyc)    # Without Service 
+m_z <- lm(Service ~ Food + Decor + East, data=nyc)  # Service is the response!
+
+avp.df <- data.frame( e_y = resid(m_y),
+                      e_z = resid(m_z)) 
+
+ggplot(avp.df, aes(y=e_y, x=e_z)) +
+  geom_point() +
+  geom_smooth(method='lm') +
+  labs(y='Price | Others', x='Service | Others')
+```
+
+It is a little confusing why we should be interpreting the result of a regression
+of the residuals, but if we consider 
+
+*   $\epsilon_y$ as the unaccounted for *variability* in the $y$ after 
+    accounting for the $X_1,\dots,X_k$ variables 
+*   $\epsilon_z$ as the remaining *signal* in $z$ that hasn't been already been 
+    accounted for by $X_1,\dots,X_k$ 
+
+Then the regression of $\epsilon_y \sim \epsilon_z$ is exactly the correct model
+for interpreting the effect of $Z$ after accounting for the effect of
+$X_1,\dots,X_k$.
+
+```{r}
+lm(e_y ~ e_z, data=avp.df) %>% summary() 
+```
+
+Notice the `e_z` estimate, standard error, t-value, and p-value are all identical
+to the what we saw in the original coefficients table.
+
+The creation of these graphs is a little annoying to do by hand and we could
+use the package `car` instead. This is what is most often done in "Learn to do
+statistics using R" style textbooks.
+
+
+```{r}
+car::avPlot(m_full, 'Service') 
+```
+
+What the x-axis represents is the *deviation* in the level of service you would 
+expect to see after already accounting for a restaurants Price and Decor. So 
+a negative value here doesn't mean that the service is bad, just less than you
+would have expected given the other covariates. Similarly the y-axis is the 
+deviation from the expected price than you would have otherwise expected given
+the other covariates.
+
+Notice that the plot for `Food` is surprising because there are two restaurants 
+(rows 117 and 168) that have food quality WAY better than you would expect 
+given the other variables. Furthermore rows 30 and 56 have prices MUCH higher
+than you would expect given the other variables and food quality.
+
+```{r}
+car::avPlot(m_full, 'Food')  # show AVP for Service variable.
+```
+
+The added variable plot facilitates investigation of issues with the regression
+assumptions of linearity and homoskedasticity associated with a singular variate.
+These issues are more clearly visible when looking at the ADV than when looking
+at the pairs plots. To make it easy to graph all the added variable plots associated
+with a model we could use the car::avPlots() function.
+
+```{r}
+car::avPlots(m_full)
+```
+
+# ggAVplots Package
+
+The `car::avPlot()` function is very convenient but it relies on base R graphics
+and also doesn't accommodated, for example, mixed-effects models. The package
+`ggAVplots` tries to account for that. Currently this package is available on
+GitHub.
+
+```{r}
+#devtools::install_github('dereksonderegger/ggAVplots')
+ggAVplots::ggAVplot(m_full, 'Food')  # identical to the car::avPlot()
+```
+
+but it might be helpful to color code the points to include the raw prices. To
+do this, we have to include the data frame for the other covariates, and
+possibly covariates that are not included in the model (for example the restaurant
+names).
+```{r}
+ggAVplots::ggAVplot(m_full, 'Food', data=nyc, color=Price) +
+  scale_colour_gradient2(low='blue',mid='white',high='red', midpoint=40)
+```
+Notice there is a strong blue point near (e_z = 2, and e_y=-7). This restaurant 
+has very low prices and better food than you expect given everything else. 
+I'd love to label that restaurant...
+
+```{r}
+ggAVplots::ggAVplot(m_full, 'Food', data=nyc, color=Price) +
+  scale_colour_gradient2(low='blue',mid='white',high='red', midpoint=40) +
+  geom_label( 
+    aes(label=Restaurant, 
+        x=e_z+1.4),                        # move label so not on the point 
+    color='black',                         # override the global Price coloring
+    data= ~filter(., e_z>1.8, e_y < -7))   # just label points like this
+```
+
+
+## A mixed effects model
+
+The `ggAVplots` package can deal with random effect models as well.
+```{r}
+# A mixed-effects model
+data('sleepstudy', package='lme4')
+model <- lmerTest::lmer( Reaction ~ Days + (1|Subject), data=sleepstudy)
+
+# car::avPlot(model, 'Days') # Error, no applicable method for class lmerMod
+ggAVplots::ggAVplot(model, 'Days')
+```
+
+
