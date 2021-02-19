@@ -1,17 +1,19 @@
 ---
 title: "Added Variable Plots"
 author: "Derek Sonderegger"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Added Variable Plots}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
+output:
+  pdf_document: default
+  rmarkdown::html_vignette: default
+vignette: |
+  %\VignetteIndexEntry{Added Variable Plots} %\VignetteEngine{knitr::rmarkdown} %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, warning=FALSE, message=FALSE}
-library(magrittr)
-library(ggplot2)
-library(dplyr)
+library(tidyverse)
+
+# Install from Derek's GitHub just once. Afterwards you can load
+# the library as normal.
+# devtools::install_github('dereksonderegger/ggAVplots')
 library(ggAVplots)
 ```
 
